@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "BiteStats",
+  "version": "1.0",
+  "description": "Provides order insights from Grubhub and DoorDash.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting",
+    "cookies",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://www.grubhub.com/*",
+    "https://api-gtm.grubhub.com/*",
+    "https://www.doordash.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "images/icon-16.png",
+      "32": "images/icon-32.png",
+      "48": "images/icon-48.png",
+      "128": "images/icon-128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.grubhub.com/*"],
+      "js": ["content/grubhub_content.js"]
+    },
+    {
+      "matches": ["https://www.doordash.com/*"],
+      "js": ["content/doordash_content.js"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["scripts/*"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}
