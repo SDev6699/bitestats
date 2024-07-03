@@ -24,13 +24,22 @@ const Dashboard = () => {
   const [displayOrderCountBar, setDisplayOrderCountBar] = useState(false);
   const [displayTopRestaurants, setDisplayTopRestaurants] = useState(false);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // previous code not working; warning was hampering build process
+  // useEffect(() => {
+  //   if (orders.length > 0 && !dateRange[0]) {
+  //     const firstOrderDate = dayjs(orders[orders.length - 1].date);
+  //     setDateRange([firstOrderDate, dayjs()]);
+  //   }
+  // }, [orders]);
+
+
+  //alternative for previous code, might solve the dependency issue.
   useEffect(() => {
     if (orders.length > 0 && !dateRange[0]) {
       const firstOrderDate = dayjs(orders[orders.length - 1].date);
       setDateRange([firstOrderDate, dayjs()]);
     }
-  }, [orders]);
+  }, [orders, dateRange]);
 
   useEffect(() => {
     const filterOrders = () => {
