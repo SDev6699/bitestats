@@ -1,0 +1,23 @@
+.toggle-switch {
+    display: flex;
+    border: 2px solid #3f51b5;
+    border-radius: 8px;
+    overflow: hidden;
+    width: 100px; /* Adjusted width */
+    cursor: pointer;
+  }
+  
+  .toggle-option {
+    flex: 1;
+    padding: 5px; /* Adjusted padding */
+    text-align: center;
+    color: #3f51b5;
+    background-color: white;
+    transition: background-color 0.3s, color 0.3s;
+    font-size: 10px; /* Adjusted font size */
+  }
+  
+  .toggle-option.selected {
+    background-color: #3f51b5;
+    color: white;
+  }
