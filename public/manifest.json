@@ -4,10 +4,7 @@
   "version": "1.0",
   "description": "Provides order insights from Grubhub and DoorDash.",
   "permissions": [
-    "activeTab",
     "storage",
-    "scripting",
-    "cookies",
     "tabs"
   ],
   "host_permissions": [
