@@ -83,6 +83,15 @@ async function fetchDataFromAPI(url, headers) {
     }
   
     if (message.action === "storeDoorDashData" && message.orders) {
+
+        chrome.storage.local.remove('grubhubOrderResults', () => {
+            if (chrome.runtime.lastError) {
+              console.error('Error clearing DoorDash order results:', chrome.runtime.lastError);
+            } else {
+              // console.log('DoorDash order results cleared successfully');
+            }
+          });
+
       chrome.storage.local.set({ doordashOrderResults: message.orders }, () => {
         if (chrome.runtime.lastError) {
           console.error('Error storing DoorDash order results:', chrome.runtime.lastError);

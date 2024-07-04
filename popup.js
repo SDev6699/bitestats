@@ -30,12 +30,17 @@ document.addEventListener('DOMContentLoaded', () => {
           // Listen for the tab's loading status
           chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo) {
             if (tabId === currentTabId && changeInfo.status === 'complete') {
-              // Once the reload is complete, wait for 1 second and then open index.html and remove the listener
-              setTimeout(() => {
-                chrome.tabs.create({ url: 'index.html' });
-                chrome.tabs.onUpdated.removeListener(listener);
-                window.close();  // Close the popup
-              }, 1000);
+              // Send message to content script to fetch data
+              chrome.tabs.sendMessage(currentTabId, { action: "fetchData" });
+
+              // Listen for confirmation from the content script
+              chrome.runtime.onMessage.addListener(function(response) {
+                  if (response.status === 'dataStored') {
+                      chrome.tabs.create({ url: 'index.html' });
+                      chrome.tabs.onUpdated.removeListener(listener);
+                      window.close();  // Close the popup
+                  }
+              });
             }
           });
         });
