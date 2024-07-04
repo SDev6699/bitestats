@@ -1,8 +1,12 @@
 (function() {
     // console.log('Content script running on DoorDash:', window.location.href);
   
-    // Fetch DoorDash data immediately when the page is loaded
-    fetchDoorDashData();
+    // Listen for messages from the popup script
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      if (message.action === "fetchData") {
+          fetchDoorDashData();
+      }
+    }); 
   
     async function fetchDoorDashData() {
       const cookieString = document.cookie;
@@ -35,6 +39,7 @@
         chrome.runtime.sendMessage({ action: "storeDoorDashData", orders: allOrders }, (response) => {
           if (response.status === 'success') {
             // console.log('All DoorDash data fetched and stored successfully');
+            chrome.runtime.sendMessage({ status: 'dataStored' }); // Send confirmation to popup
           } else {
             console.error('Error storing DoorDash data:', response.error);
           }

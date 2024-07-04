@@ -5,7 +5,7 @@ import OrderData from '../services/OrderData';
 const useOrderData = () => {
   const [orders, setOrders] = useState([]);
 
-  useEffect(() => {
+  const fetchOrderData = () => {
     // Request data from Chrome extension storage
     chrome.runtime.sendMessage({ action: 'getOrderInsights' }, (response) => {
       if (response) {
@@ -21,6 +21,26 @@ const useOrderData = () => {
         setOrders(orderObjects);
       }
     });
+  };
+
+  useEffect(() => {
+    // Initial fetch of order data
+    fetchOrderData();
+
+    // Set up storage change listener
+    const handleStorageChange = (changes, area) => {
+      if (area === 'local' && (changes.grubhubOrderResults || changes.doordashOrderResults)) {
+        console.log('Storage changed:', changes);
+        fetchOrderData();
+      }
+    };
+
+    chrome.storage.onChanged.addListener(handleStorageChange);
+
+    // Cleanup listener on component unmount
+    return () => {
+      chrome.storage.onChanged.removeListener(handleStorageChange);
+    };
   }, []);
 
   return { orders };

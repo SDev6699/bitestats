@@ -1,8 +1,12 @@
 (function() {
     // console.log('Content script running on Grubhub:', window.location.href);
   
-    // Fetch Grubhub data immediately when the page is loaded
-    fetchGrubhubData();
+    // Listen for messages from the popup script
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        if (message.action === "fetchData") {
+            fetchGrubhubData();
+        }
+    });
   
     function fetchGrubhubData() {
       const cookieName = 'ngStorage-oauthTokens';
@@ -35,6 +39,7 @@
         chrome.runtime.sendMessage({ action: "fetchGrubhubData", token: accessToken, uuid: uuid }, (response) => {
           if (response.status === 'success') {
             // console.log('Grubhub data fetched successfully');
+            chrome.runtime.sendMessage({ status: 'dataStored' }); // Send confirmation to popup
           } else {
             console.error('Error fetching Grubhub data:', response.error);
           }
