@@ -9,16 +9,21 @@ const useOrderData = () => {
     // Request data from Chrome extension storage
     chrome.runtime.sendMessage({ action: 'getOrderInsights' }, (response) => {
       if (response) {
-        const grubhubOrders = response.grubhubOrderResults || [];
-        const doordashOrders = response.doordashOrderResults || [];
+        chrome.storage.local.get(['host'], (result) => {
+          const host = result.host || '';
+          let orderObjects = [];
 
-        const orderObjects = [
-          ...grubhubOrders.map(order => OrderData.fromGrubhub(order)),
-          ...doordashOrders.map(order => OrderData.fromDoorDash(order))
-        ];
+          if (host.includes('grubhub.com')) {
+            const grubhubOrders = response.grubhubOrderResults || [];
+            orderObjects = grubhubOrders.map(order => OrderData.fromGrubhub(order));
+          } else if (host.includes('doordash.com')) {
+            const doordashOrders = response.doordashOrderResults || [];
+            orderObjects = doordashOrders.map(order => OrderData.fromDoorDash(order));
+          }
 
-        console.log('Fetched Orders:', orderObjects);
-        setOrders(orderObjects);
+          // console.log('Fetched Orders:', orderObjects);
+          setOrders(orderObjects);
+        });
       }
     });
   };
@@ -26,22 +31,7 @@ const useOrderData = () => {
   useEffect(() => {
     // Initial fetch of order data
     fetchOrderData();
-
-    // Set up storage change listener
-    const handleStorageChange = (changes, area) => {
-      if (area === 'local' && (changes.grubhubOrderResults || changes.doordashOrderResults)) {
-        console.log('Storage changed:', changes);
-        fetchOrderData();
-      }
-    };
-
-    chrome.storage.onChanged.addListener(handleStorageChange);
-
-    // Cleanup listener on component unmount
-    return () => {
-      chrome.storage.onChanged.removeListener(handleStorageChange);
-    };
-  }, []);
+  }, []); // Empty dependency array means this runs once after the initial render
 
   return { orders };
 };

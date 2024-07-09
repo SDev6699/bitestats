@@ -6,12 +6,13 @@ import LineChart from '../components/Dashboard/LineChart';
 import BarChart from '../components/Dashboard/BarChart';
 import DonutChart from '../components/Dashboard/DonutChart';
 import ToggleSwitch from '../components/Dashboard/ToggleSwitch';
-import { Grid, Container, Paper, Box, Typography } from '@mui/material';
+import { Grid, Container, Paper, Box, Typography, Checkbox, FormControlLabel } from '@mui/material';
 import dayjs from 'dayjs';
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore';
 import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 import { AttachMoney as AttachMoneyIcon, ShoppingBasket as ShoppingBasketIcon, Receipt as ReceiptIcon } from '@mui/icons-material';
 import { Restaurant as RestaurantIcon, LocalMall as LocalMallIcon } from '@mui/icons-material';
+import { Tooltip } from '@mui/material';
 
 dayjs.extend(isSameOrBefore);
 dayjs.extend(isSameOrAfter);
@@ -23,6 +24,10 @@ const Dashboard = () => {
   const [displayOrderCountLine, setDisplayOrderCountLine] = useState(false);
   const [displayOrderCountBar, setDisplayOrderCountBar] = useState(false);
   const [displayTopRestaurants, setDisplayTopRestaurants] = useState(false);
+  const [includeCharges, setIncludeCharges] = useState(false);
+  const [includePromotions, setIncludePromotions] = useState(false);
+  const [includeGiftCards, setIncludeGiftCards] = useState(false);
+
 
   useEffect(() => {
     if (orders.length > 0 && !dateRange[0]) {
@@ -46,18 +51,18 @@ const Dashboard = () => {
   }, [dateRange, orders]);
 
   const calculateTotal = (order) => {
-    if (order.dinerGrandTotal && order.dinerGrandTotal > 0) {
-      return order.dinerGrandTotal;
+    let total = order.subtotal;
+    if (includeCharges) {
+        total += order.serviceFee + order.deliveryFee + order.salesTax + order.driverTip + order.donation;
     }
-    return order.lineItems.reduce((total, item) => {
-      const itemTotal = item.orderItemExtras
-        ? item.orderItemExtras.reduce((extraTotal, extra) => {
-            return extraTotal + extra.orderItemExtraOptions.reduce((optionTotal, option) => optionTotal + option.price, 0);
-          }, 0) + item.originalItemPrice
-        : item.options.reduce((optionTotal, option) => optionTotal + (option.price * option.quantity), 0) + item.originalItemPrice;
-      return total + (itemTotal * item.quantity);
-    }, 0);
-  };
+    if (includePromotions) {
+      total -= order.promotionalDiscount;
+    }
+    if(includeGiftCards) {
+      total -= order.giftCards;
+    }
+    return total;
+};
 
   const totalMoneySpent = filteredOrders.reduce((total, order) => total + calculateTotal(order), 0);
   const totalOrders = filteredOrders.length;
@@ -88,7 +93,7 @@ const Dashboard = () => {
         ? item.orderItemExtras.reduce((extraTotal, extra) => {
             return extraTotal + extra.orderItemExtraOptions.reduce((optionTotal, option) => optionTotal + option.price, 0);
           }, 0) + item.originalItemPrice
-        : item.options.reduce((optionTotal, option) => optionTotal + (option.price * option.quantity), 0) + item.originalItemPrice;
+        : item.originalItemPrice;
       const restaurantName = order.restaurantName;
       if (!acc[dishName]) {
         acc[dishName] = { label: dishName, moneySpent: 0, restaurantName: restaurantName, orderCount: 0 };
@@ -114,7 +119,6 @@ const Dashboard = () => {
   const dishDataArray = Object.values(dishData).sort((a, b) => displayOrderCountBar ? b.orderCount - a.orderCount : b.moneySpent - a.moneySpent).slice(0, 10);
   const restaurantDataArray = Object.values(restaurantData).sort((a, b) => displayOrderCountBar ? b.orderCount - a.orderCount : b.moneySpent - a.moneySpent).slice(0, 10);
 
-  // New: Calculate order timings for Donut chart
   const orderTimings = filteredOrders.reduce((acc, order) => {
     const hour = dayjs(order.date).hour();
     if (hour >= 5 && hour < 12) {
@@ -131,11 +135,33 @@ const Dashboard = () => {
     <Container>
       <Box sx={{ my: 4 }}>
         <Paper elevation={3} sx={{ p: 4 }}>
-          <Grid container spacing={2} alignItems="center">
-            <Grid item xs={12} md={6}>
-              <DateRangePickerComponent dateRange={dateRange} setDateRange={setDateRange} orders={orders} />
-            </Grid>
+        <Grid container spacing={2} alignItems="center" justifyContent="space-between">
+          <Grid item xs={12} md={6}>
+            <DateRangePickerComponent dateRange={dateRange} setDateRange={setDateRange} orders={orders} />
           </Grid>
+          <Grid item xs={12} md={6} display="flex" justifyContent="flex-end">
+            <Box sx={{ display: 'flex', width: '100%', justifyContent: 'space-around' }}>
+              <Tooltip title="Incorporates all applicable fees, taxes, tips, and donations into the total.">
+                <FormControlLabel
+                  control={<Checkbox checked={includeCharges} onChange={() => setIncludeCharges(!includeCharges)} name="includeCharges" color="primary" />}
+                  label="Add All Fees & Taxes"
+                />
+              </Tooltip>
+              <Tooltip title="Includes all promotional discounts in your final amount.">
+                <FormControlLabel
+                  control={<Checkbox checked={includePromotions} onChange={() => setIncludePromotions(!includePromotions)} name="includePromotions" color="primary" />}
+                  label="Apply Promo Discounts"
+                />
+              </Tooltip>
+              <Tooltip title="Applies payments made via gift cards to the order total.">
+                <FormControlLabel
+                  control={<Checkbox checked={includeGiftCards} onChange={() => setIncludeGiftCards(!includeGiftCards)} name="includeGiftCards" color="primary" />}
+                  label="Use Gift Card Credits"
+                />
+              </Tooltip>
+            </Box>
+          </Grid>
+        </Grid>
           <Grid container spacing={2} sx={{ mt: 2 }}>
             <Grid item xs={12}>
               <Grid container spacing={2}>
@@ -229,10 +255,11 @@ const Dashboard = () => {
               </Grid>
             )}
           </Grid>
-        </Paper>
+          </Paper>
       </Box>
     </Container>
   );
 };
 
 export default Dashboard;
+

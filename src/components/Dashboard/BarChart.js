@@ -19,18 +19,36 @@ ChartJS.register(
   Legend
 );
 
-const getInitials = (label) => {
-  return label
-    .split(' ')
-    .map(word => word[0])
-    .join('');
+// Function to split a single label into multiple lines based on max character length
+const splitLabel = (label, maxCharsPerLine) => {
+  const words = label.split(' ');
+  let result = [];
+  let line = "";
+
+  words.forEach(word => {
+    if ((line + word).length > maxCharsPerLine) {
+      result.push(line.trim());
+      line = word + " ";  // Start a new line
+    } else {
+      line += word + " ";
+    }
+  });
+
+  if (line) {
+    result.push(line.trim());  // Add the last line
+  }
+
+  return result;
 };
 
 const BarChart = ({ data, displayOrderCount, displayTopRestaurants }) => {
-  const topData = data.slice(0, 5);
 
+  // console.log({ data, displayOrderCount, displayTopRestaurants });
+  const maxCharsPerLine = 15; // Adjust this based on your average bar width and desired aesthetics
+
+  const topData = data.slice(0, 5);
   const chartData = {
-    labels: topData.map(item => getInitials(item.label)),
+    labels: topData.map(item => splitLabel(item.label, maxCharsPerLine)),
     datasets: [
       {
         label: displayOrderCount ? 'Order Count' : 'Money Spent ($)',
@@ -51,29 +69,13 @@ const BarChart = ({ data, displayOrderCount, displayTopRestaurants }) => {
       },
       title: {
         display: true,
-        text: displayTopRestaurants ?
-          (displayOrderCount ? 'Top Restaurants by Order Count' : 'Top Restaurants by Money Spent') :
-          (displayOrderCount ? 'Top Dishes by Order Count' : 'Top Dishes by Money Spent'),
+        text: displayTopRestaurants ? 
+              (displayOrderCount ? 'Top Restaurants by Order Count' : 'Top Restaurants by Money Spent') :
+              (displayOrderCount ? 'Top Dishes by Order Count' : 'Top Dishes by Money Spent'),
         font: {
           family: 'Roboto',
+          size: 16 // Set title font size here if needed
         },
-      },
-      tooltip: {
-        callbacks: {
-          label: function(context) {
-            const label = context.dataset.label || '';
-            const additionalInfo = displayTopRestaurants ? '' : `(Restaurant: ${topData[context.dataIndex].restaurantName || 'Unknown'})`;
-            const orderCount = topData[context.dataIndex].orderCount || 0;
-            if (displayOrderCount) {
-              return `${label}: ${context.raw}${additionalInfo} (Orders: ${orderCount})`;
-            } else {
-              return `${label}: $${context.raw}${additionalInfo} (Orders: ${orderCount})`;
-            }
-          },
-          title: function(tooltipItems) {
-            return topData[tooltipItems[0].dataIndex].label;
-          }
-        }
       },
     },
     scales: {
@@ -85,6 +87,16 @@ const BarChart = ({ data, displayOrderCount, displayTopRestaurants }) => {
             family: 'Roboto',
           },
         },
+        ticks: {
+          autoSkip: false,
+          maxRotation: 0,
+          minRotation: 0,
+          font: {
+            size: 12, // Font size for x-axis labels
+            family: 'Roboto' // Maintain font consistency
+          },
+          padding: 10 // Adjust padding to give labels more room if needed
+        }
       },
       y: {
         title: {
@@ -94,15 +106,22 @@ const BarChart = ({ data, displayOrderCount, displayTopRestaurants }) => {
             family: 'Roboto',
           },
         },
+        ticks: {
+          font: {
+            size: 12, // Match the font size of y-axis labels to x-axis
+            family: 'Roboto'
+          }
+        }
       },
     },
   };
 
-  return (
+return (
     <div style={{ width: '100%', height: '100%' }}>
-      <Bar data={chartData} options={options} style={{ width: '100%', height: '100%' }} />
+      <Bar data={chartData} options={options} />
     </div>
   );
 };
+
 
 export default BarChart;
