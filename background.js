@@ -1,118 +1,131 @@
-async function fetchDataFromAPI(url, headers) {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: headers
-    });
-  
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-  
-    const text = await response.text();
-    try {
-      return JSON.parse(text);
-    } catch (error) {
-      console.error('Error parsing JSON:', error);
-      console.error('Response text:', text);
-      throw new Error('Invalid JSON response');
-    }
-  }
-  
-  async function fetchAllPages(urlTemplate, token, headers) {
-    let currentPage = 1;
-    let totalPages = 1;
-    const allResults = [];
-  
-    try {
-      do {
-        const url = urlTemplate.replace('{{pageNum}}', currentPage);
-        const data = await fetchDataFromAPI(url, headers);
-        if (!data || !data.results || !data.pager) {
-          throw new Error('Invalid data structure');
-        }
-        allResults.push(...data.results);
-        currentPage = data.pager.current_page + 1;
-        totalPages = data.pager.total_pages;
-      } while (currentPage <= totalPages);
-    } catch (error) {
-      console.error('Error fetching all pages:', error);
-      throw error; // Re-throw the error to be caught in the calling function
-    }
-  
-    chrome.storage.local.remove('doordashOrderResults', () => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // console.log('Received message:', message);
+
+  if (message.action === "setHost" && message.host) {
+    chrome.storage.local.set({ host: message.host }, () => {
       if (chrome.runtime.lastError) {
-        console.error('Error clearing DoorDash order results:', chrome.runtime.lastError);
+        console.error('Error setting host:', chrome.runtime.lastError);
+        sendResponse({ status: 'error', error: chrome.runtime.lastError });
       } else {
-        // console.log('DoorDash order results cleared successfully');
+        // console.log('Host set successfully:', message.host);
+        sendResponse({ status: 'success' });
       }
     });
-  
-    chrome.storage.local.set({ grubhubOrderResults: allResults });
-    // console.log('Grubhub data fetched successfully');
+    return true; // Keeps the message channel open for sendResponse
   }
-  
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.action === "fetchGrubhubData" && message.token && message.uuid) {
-      fetchGrubhubOrders(message.token, message.uuid).then(() => {
-        sendResponse({ status: 'success' });
-      }).catch(error => {
-        console.error('Error fetching Grubhub data:', error);
-        sendResponse({ status: 'error', error: error.message });
-      });
-      return true; // Keeps the message channel open for sendResponse
-    }
-  
-    if (message.action === "fetchDoorDashData" && message.headers) {
-      fetchDoorDashOrders(message.headers).then(() => {
-        sendResponse({ status: 'success' });
-      }).catch(error => {
-        console.error('Error fetching DoorDash data:', error);
-        sendResponse({ status: 'error', error: error.message });
-      });
-      return true; // Keeps the message channel open for sendResponse
-    }
-  
-    if (message.action === "getOrderInsights") {
-      chrome.storage.local.get(['grubhubOrderResults', 'doordashOrderResults'], (result) => {
-        sendResponse({ 
-          grubhubOrderResults: result.grubhubOrderResults,
-          doordashOrderResults: result.doordashOrderResults
+
+  if (message.action === "fetchSiteData" && message.site) {
+    chrome.storage.local.get('host', (result) => {
+      const host = result.host;
+      if (!host) {
+        console.error('Host not found in local storage.');
+        sendResponse({ status: 'error', error: 'Host not found' });
+        return;
+      }
+      // console.log('Fetching data for host:', host);
+      if (host.includes('grubhub.com') && message.site === 'grubhub') {
+        fetchAllDataForSite('grubhub').then(() => {
+          sendResponse({ status: 'success' });
+        }).catch(error => {
+          console.error('Error fetching Grubhub data:', error);
+          sendResponse({ status: 'error', error: error.message });
         });
+      } else if (host.includes('doordash.com') && message.site === 'doordash') {
+        fetchAllDataForSite('doordash').then(() => {
+          sendResponse({ status: 'success' });
+        }).catch(error => {
+          console.error('Error fetching DoorDash data:', error);
+          sendResponse({ status: 'error', error: error.message });
+        });
+      } else {
+        console.error('Unsupported host or site:', host, message.site);
+        sendResponse({ status: 'error', error: 'Unsupported host or site' });
+      }
+    });
+    return true; // Keeps the message channel open for sendResponse
+  }
+
+  if (message.action === "getOrderInsights") {
+    chrome.storage.local.get(['grubhubOrderResults', 'doordashOrderResults'], (result) => {
+      // console.log('Order insights:', result);
+      sendResponse({
+        grubhubOrderResults: result.grubhubOrderResults,
+        doordashOrderResults: result.doordashOrderResults
       });
-      return true; // Keeps the message channel open for sendResponse
-    }
-  
-    if (message.action === "storeDoorDashData" && message.orders) {
+    });
+    return true; // Keeps the message channel open for sendResponse
+  }
 
-        chrome.storage.local.remove('grubhubOrderResults', () => {
-            if (chrome.runtime.lastError) {
-              console.error('Error clearing DoorDash order results:', chrome.runtime.lastError);
-            } else {
-              // console.log('DoorDash order results cleared successfully');
-            }
-          });
+  if (message.action === "storeDoorDashData" && message.orders) {
+    // console.log('Storing DoorDash data:', message.orders);
+    const newOrders = message.orders.map(order => ({
+      ...order,
+      fetchedAt: new Date().toISOString()
+    }));
 
-      chrome.storage.local.set({ doordashOrderResults: message.orders }, () => {
+    chrome.storage.local.get('doordashOrderResults', (result) => {
+      const existingOrders = result.doordashOrderResults || [];
+      const updatedOrders = [...newOrders, ...existingOrders];
+
+      chrome.storage.local.set({ doordashOrderResults: updatedOrders }, () => {
         if (chrome.runtime.lastError) {
           console.error('Error storing DoorDash order results:', chrome.runtime.lastError);
           sendResponse({ status: 'error', error: chrome.runtime.lastError });
         } else {
           // console.log('DoorDash order results stored successfully');
           sendResponse({ status: 'success' });
+          // Update fetching status to false after data storage
+          chrome.storage.local.set({ fetching: false });
         }
       });
-      return true; // Keeps the message channel open for sendResponse
-    }
-  });
-  
-  async function fetchGrubhubOrders(token, uuid) {
-    const urlTemplate = `https://api-gtm.grubhub.com/diners/${uuid}/search_listing?pageNum={{pageNum}}&pageSize=10&facet=scheduled%3Afalse&facet=orderType%3AALL&sorts=default`;
-    return fetchAllPages(urlTemplate, token, {
-      'Accept': 'application/json',
-      'Authorization': `Bearer ${token}`,
-      'Origin': 'https://www.grubhub.com',
-      'Referer': 'https://www.grubhub.com/'
     });
+
+    return true; // Keeps the message channel open for sendResponse
   }
-  
-  
+
+  if (message.action === "storeGrubhubData" && message.orders) {
+    // console.log('Storing Grubhub data:', message.orders);
+    const newOrders = message.orders.map(order => ({
+      ...order,
+      fetchedAt: new Date().toISOString()
+    }));
+
+    chrome.storage.local.get('grubhubOrderResults', (result) => {
+      const existingOrders = result.grubhubOrderResults || [];
+      const updatedOrders = [...newOrders, ...existingOrders];
+
+      chrome.storage.local.set({ grubhubOrderResults: updatedOrders }, () => {
+        if (chrome.runtime.lastError) {
+          console.error('Error storing Grubhub order results:', chrome.runtime.lastError);
+          sendResponse({ status: 'error', error: chrome.runtime.lastError });
+        } else {
+          // console.log('Grubhub order results stored successfully');
+          sendResponse({ status: 'success' });
+           // Update fetching status to false after data storage
+           chrome.storage.local.set({ fetching: false });
+        }
+      });
+    });
+
+    return true; // Keeps the message channel open for sendResponse
+  }
+});
+
+async function fetchAllDataForSite(site) {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const currentTab = tabs[0];
+  const url = new URL(currentTab.url);
+  const host = url.hostname;
+
+  // console.log('Fetching data for site:', site, 'on host:', host);
+
+  if (site === 'grubhub' && host.includes('grubhub.com')) {
+    const grubhubData = await chrome.tabs.sendMessage(currentTab.id, { action: "fetchData" });
+    return grubhubData;
+  } else if (site === 'doordash' && host.includes('doordash.com')) {
+    const doordashData = await chrome.tabs.sendMessage(currentTab.id, { action: "fetchData" });
+    return doordashData;
+  } else {
+    throw new Error('Unsupported host');
+  }
+}
