@@ -24,7 +24,7 @@ const Dashboard = () => {
   const [displayOrderCountLine, setDisplayOrderCountLine] = useState(false);
   const [displayOrderCountBar, setDisplayOrderCountBar] = useState(false);
   const [displayTopRestaurants, setDisplayTopRestaurants] = useState(false);
-  const [includeCharges, setIncludeCharges] = useState(false);
+  const [includeCharges, setIncludeCharges] = useState(true);
   const [includePromotions, setIncludePromotions] = useState(false);
   const [includeGiftCards, setIncludeGiftCards] = useState(false);
 
