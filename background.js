@@ -7,7 +7,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         console.error('Error setting host:', chrome.runtime.lastError);
         sendResponse({ status: 'error', error: chrome.runtime.lastError });
       } else {
-        // console.log('Host set successfully:', message.host);
         sendResponse({ status: 'success' });
       }
     });
@@ -16,26 +15,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.action === "fetchSiteData" && message.site) {
     chrome.storage.local.get('host', (result) => {
+      // console.log("Host", result.host);
       const host = result.host;
       if (!host) {
         console.error('Host not found in local storage.');
         sendResponse({ status: 'error', error: 'Host not found' });
         return;
       }
-      // console.log('Fetching data for host:', host);
+      console.log("Fetching data for host:", host);
       if (host.includes('grubhub.com') && message.site === 'grubhub') {
         fetchAllDataForSite('grubhub').then(() => {
-          sendResponse({ status: 'success' });
+          chrome.storage.local.set({ dataStored: true }).then(() => {
+            console.log(`Sending Response to popupjs at ${new Date().toLocaleTimeString('en-US', { hour12: false })}:${new Date().getSeconds()}:${new Date().getMilliseconds()}`);
+            sendResponse({ status: 'success' });
+          }).catch((error) => {
+            console.error('Error storing data:', error);
+            sendResponse({ status: 'failure', message: error.message });
+          });
         }).catch(error => {
-          console.error('Error fetching Grubhub data:', error);
-          sendResponse({ status: 'error', error: error.message });
+          if (error.status === 'fetching_in_progress') {
+            sendResponse({ status: 'fetching_in_progress' });
+          } else {
+            console.error('Error fetching Grubhub data:', error);
+            sendResponse({ status: 'error', error: error.message });
+          }
         });
       } else if (host.includes('doordash.com') && message.site === 'doordash') {
         fetchAllDataForSite('doordash').then(() => {
-          sendResponse({ status: 'success' });
+          chrome.storage.local.set({ dataStored: true }).then(() => {
+            sendResponse({ status: 'success' });
+          }).catch((error) => {
+            console.error('Error storing data:', error);
+            sendResponse({ status: 'failure', message: error.message });
+          });
         }).catch(error => {
-          console.error('Error fetching DoorDash data:', error);
-          sendResponse({ status: 'error', error: error.message });
+          if (error.status === 'fetching_in_progress') {
+            sendResponse({ status: 'fetching_in_progress' });
+          } else {
+            console.error('Error fetching DoorDash data:', error);
+            sendResponse({ status: 'error', error: error.message });
+          }
         });
       } else {
         console.error('Unsupported host or site:', host, message.site);
@@ -46,8 +65,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === "getOrderInsights") {
+    console.log('getOrderInsights called by:', sender);
     chrome.storage.local.get(['grubhubOrderResults', 'doordashOrderResults'], (result) => {
-      // console.log('Order insights:', result);
       sendResponse({
         grubhubOrderResults: result.grubhubOrderResults,
         doordashOrderResults: result.doordashOrderResults
@@ -57,7 +76,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === "storeDoorDashData" && message.orders) {
-    // console.log('Storing DoorDash data:', message.orders);
     const newOrders = message.orders.map(order => ({
       ...order,
       fetchedAt: new Date().toISOString()
@@ -72,10 +90,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           console.error('Error storing DoorDash order results:', chrome.runtime.lastError);
           sendResponse({ status: 'error', error: chrome.runtime.lastError });
         } else {
-          // console.log('DoorDash order results stored successfully');
-          sendResponse({ status: 'success' });
-          // Update fetching status to false after data storage
-          chrome.storage.local.set({ fetching: false });
+          chrome.storage.local.set({ doordashFetching: false, dataStored: true }).then(() => {
+            sendResponse({ status: 'success' });
+          }).catch((error) => {
+            console.error('Error storing data:', error);
+            sendResponse({ status: 'failure', message: error.message });
+          });
         }
       });
     });
@@ -84,7 +104,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === "storeGrubhubData" && message.orders) {
-    // console.log('Storing Grubhub data:', message.orders);
     const newOrders = message.orders.map(order => ({
       ...order,
       fetchedAt: new Date().toISOString()
@@ -99,10 +118,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           console.error('Error storing Grubhub order results:', chrome.runtime.lastError);
           sendResponse({ status: 'error', error: chrome.runtime.lastError });
         } else {
-          // console.log('Grubhub order results stored successfully');
-          sendResponse({ status: 'success' });
-           // Update fetching status to false after data storage
-           chrome.storage.local.set({ fetching: false });
+          chrome.storage.local.set({ grubhubFetching: false, dataStored: true }).then(() => {
+            sendResponse({ status: 'success' });
+          }).catch((error) => {
+            console.error('Error storing data:', error);
+            sendResponse({ status: 'failure', message: error.message });
+          });
         }
       });
     });
@@ -116,8 +137,6 @@ async function fetchAllDataForSite(site) {
   const currentTab = tabs[0];
   const url = new URL(currentTab.url);
   const host = url.hostname;
-
-  // console.log('Fetching data for site:', site, 'on host:', host);
 
   if (site === 'grubhub' && host.includes('grubhub.com')) {
     const grubhubData = await chrome.tabs.sendMessage(currentTab.id, { action: "fetchData" });

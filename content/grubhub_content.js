@@ -1,23 +1,83 @@
 (function () {
   const DEFAULT_PAGE_SIZE = 10;
   const INCREMENTAL_PAGE_SIZE = 2;
+  let loginCheckInterval;
+  let currentSessionId = null; // Declare as global variable
+  let isFetching = false; // Global variable to track fetching status
 
-  // Set fetching flag when content script starts
-  chrome.storage.local.set({ fetching: true });
+  // Check if user is logged in and then set fetching flag if logged in
+  async function initialize() {
+    // Retrieve the session ID and fetching status from local storage
+    chrome.storage.local.get(['sessionId', 'grubhubFetching'], (result) => {
+      currentSessionId = result.sessionId || null;
+      isFetching = result.grubhubFetching || false;
+      checkInitialLoginStatus();
+    });
+  }
+
+  // Check initial login status
+  async function checkInitialLoginStatus() {
+    const isLoggedIn = await checkGrubhubLoginStatus();
+    if (!isLoggedIn) {
+      loginCheckInterval = setInterval(async () => {
+        const loggedIn = await checkGrubhubLoginStatus();
+        if (loggedIn) {
+          clearInterval(loginCheckInterval);
+        }
+      }, 100); // Check every 100 milliseconds
+    }
+  }
 
   // Entry point: Fetch initial data when the content script is loaded
-  checkAndFetchGrubhubData();
+  initialize();
 
   // Listen for messages from the background script
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === "fetchData") {
-      checkAndFetchGrubhubData()
-        .then(() => sendResponse({ status: "success" }))
-        .catch((error) => sendResponse({ status: "error", error: error.message }));
+      if (!isFetching) {
+        checkInitialLoginStatus()
+          .then(() => checkAndFetchGrubhubData())
+          .then(() => sendResponse({ status: "success" }))
+          .catch((error) => sendResponse({ status: "error", error: error.message }));
+      } else {
+        sendResponse({ status: 'fetching_in_progress' });
+      }
+      return true; // Keeps the message channel open for sendResponse
+    } else if (message.action === "checkLoginStatus") {
+      checkGrubhubLoginStatus(true)
+        .then((isLoggedIn) => {
+          sendResponse({ status: "success", isLoggedIn: isLoggedIn });
+        })
+        .catch((error) => {
+          sendResponse({ status: "error", error: error.message });
+        });
       return true; // Keeps the message channel open for sendResponse
     }
   });
 
+  async function checkGrubhubLoginStatus(ischeckLoginStatus = false) {
+    const { isLoggedIn, sessionId } = await getGrubhubAuthDetails();
+    chrome.storage.local.set({ grubhubLoggedIn: isLoggedIn });
+      if (!ischeckLoginStatus && isLoggedIn) {
+        chrome.storage.local.set({ grubhubFetching: true });
+        isFetching = true;
+        if (sessionId !== currentSessionId) {
+          currentSessionId = sessionId;
+          chrome.storage.local.set({ sessionId: currentSessionId });
+  
+          // Clear grubhubOrderResults if a new session is detected
+          chrome.storage.local.remove("grubhubOrderResults", () => {
+          });
+        } else if(!isFetching) {
+          checkAndFetchGrubhubData();
+        }
+      } else {
+        chrome.storage.local.set({ grubhubFetching: false });
+        isFetching = false;
+      }
+    return isLoggedIn;
+  }
+  
   async function checkAndFetchGrubhubData() {
     try {
       const existingData = await getExistingGrubhubData();
@@ -55,14 +115,18 @@
 
       chrome.runtime.sendMessage({ action: "storeGrubhubData", orders: timestampedOrders }, (response) => {
         if (response.status === "success") {
-          // console.log("Data stored successfully.");
-          chrome.runtime.sendMessage({ status: "dataStored" });
+          chrome.storage.local.set({ dataStored: true, grubhubFetching: false });
+          isFetching = false;
         } else {
           console.error("Error storing Grubhub data:", JSON.stringify(response.error));
+          chrome.storage.local.set({ grubhubFetching: false });
+          isFetching = false;
         }
       });
     } catch (error) {
       console.error("Error fetching Grubhub data:", formatErrorLog(error, { token, uuid }));
+      chrome.storage.local.set({ grubhubFetching: false });
+      isFetching = false;
     }
   }
 
@@ -155,19 +219,16 @@
     if (localStorageValue) {
       const parsedLocalStorageValue = JSON.parse(localStorageValue);
       uuid = parsedLocalStorageValue.ud_id;
-      // console.log("UUID:", uuid); // Debug log for UUID
-    } else {
-      // console.log("No local storage data found for the specified key.");
     }
 
     if (cookieValue && uuid) {
       const parsedCookieValue = JSON.parse(cookieValue);
       const accessToken = parsedCookieValue.access_token;
-      // console.log("Access Token:", accessToken); // Debug log for Access Token
-      return { token: accessToken, uuid: uuid };
+      const sessionId = `${uuid}-${parsedCookieValue.loginTimestamp}`; // Unique session ID
+      return { token: accessToken, uuid: uuid, isLoggedIn: true, sessionId };
     }
 
-    return {};
+    return { isLoggedIn: false, sessionId: null };
   }
 
   function formatErrorLog(error, additionalInfo = {}) {

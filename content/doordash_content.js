@@ -1,19 +1,58 @@
 (function() {
   const DEFAULT_PAGE_SIZE = 10;
   const INCREMENTAL_PAGE_SIZE = 2;
+  let loginCheckInterval;
+  let currentSessionId = null; // Declare as global variable
+  let isFetching = false; // Global variable to track fetching status
 
-  // Set fetching flag when content script starts
-  chrome.storage.local.set({ fetching: true });
+  // Check if user is logged in and then set fetching flag if logged in
+  async function initialize() {
+    // Retrieve the session ID and fetching status from local storage
+    chrome.storage.local.get(['sessionId', 'doordashFetching'], (result) => {
+      currentSessionId = result.sessionId || null;
+      isFetching = result.doordashFetching || false;
+      checkInitialLoginStatus();
+    });
+  }
+
+  // Check initial login status
+  async function checkInitialLoginStatus() {
+    const isLoggedIn = await checkDoorDashLoginStatus();
+    if (!isLoggedIn) {
+      loginCheckInterval = setInterval(async () => {
+        // console.log("User not logged in");
+        const loggedIn = await checkDoorDashLoginStatus();
+        if (loggedIn) {
+          clearInterval(loginCheckInterval);
+        }
+      }, 100); // Check every 100 milliseconds
+    }
+  }
 
   // Entry point: Fetch initial data when the content script is loaded
-  checkAndFetchDoorDashData();
+  initialize();
 
   // Listen for messages from the background script
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === "fetchData") {
-      checkAndFetchDoorDashData()
-        .then(() => sendResponse({ status: 'success' }))
-        .catch(error => sendResponse({ status: 'error', error: error.message }));
+      // console.log("IsFetching: ", isFetching)
+      if (!isFetching) {
+        checkInitialLoginStatus()
+          .then(() => checkAndFetchDoorDashData())
+          .then(() => sendResponse({ status: 'success' }))
+          .catch(error => sendResponse({ status: 'error', error: error.message }));
+      } else {
+        sendResponse({ status: 'fetching_in_progress' });
+      }
+      return true; // Keeps the message channel open for sendResponse
+    } else if (message.action === "checkLoginStatus") {
+      checkDoorDashLoginStatus(true)
+        .then((isLoggedIn) => {
+          sendResponse({ status: 'success', isLoggedIn: isLoggedIn });
+        })
+        .catch((error) => {
+          sendResponse({ status: 'error', error: error.message });
+        });
       return true; // Keeps the message channel open for sendResponse
     }
   });
@@ -61,13 +100,18 @@
       chrome.runtime.sendMessage({ action: "storeDoorDashData", orders: timestampedOrders }, (response) => {
         if (response.status === 'success') {
           // console.log('Data stored successfully.');
-          chrome.runtime.sendMessage({ status: 'dataStored' });
+          chrome.storage.local.set({ doordashFetching: false, dataStored: true });
+          isFetching = false;
         } else {
           console.error('Error storing DoorDash data:', JSON.stringify(response.error));
+          chrome.storage.local.set({ doordashFetching: false });
+          isFetching = false;
         }
       });
     } catch (error) {
       console.error('Error fetching DoorDash data:', formatErrorLog(error, headers));
+      chrome.storage.local.set({ doordashFetching: false });
+      isFetching = false;
     }
   }
 
@@ -152,32 +196,45 @@
     }
   }
 
-  async function fetchDataFromAPI(url, headers) {
-    const response = await fetch(url, {
-      method: "GET",
-      headers: headers,
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const text = await response.text();
-    try {
-      return JSON.parse(text);
-    } catch (error) {
-      console.error("Error parsing JSON:", error);
-      console.error("Response text:", text);
-      throw new Error("Invalid JSON response");
-    }
-  }
-
   async function getExistingDoorDashData() {
     return new Promise((resolve) => {
       chrome.storage.local.get(['doordashOrderResults'], (result) => {
         resolve(result.doordashOrderResults || []);
       });
     });
+  }
+
+  async function checkDoorDashLoginStatus(ischeckLoginStatus = false) {
+    // console.log("isCheckLoginStatus: ", ischeckLoginStatus, isFetching)
+    const cookieName = "dd_cx_logged_in"; // Check for this cookie to determine login status
+    const cookieValue = getCookieValue(document.cookie, cookieName);
+    const isLoggedIn = cookieValue !== null;
+    chrome.storage.local.set({ doordashLoggedIn: isLoggedIn });
+
+    if (!ischeckLoginStatus && isLoggedIn) {
+      chrome.storage.local.set({ doordashFetching: true });
+      isFetching = true;
+      // console.log("Fetching True checkDoorDashLoginStatus");
+      const sessionId = `${cookieValue}`; // Use cookie value as session ID
+      if (sessionId !== currentSessionId) {
+        currentSessionId = sessionId;
+        chrome.storage.local.set({ sessionId: currentSessionId });
+
+        // Clear doordashOrderResults if a new session is detected
+        chrome.storage.local.remove("doordashOrderResults", () => {
+          // checkAndFetchDoorDashData();
+        });
+      } else {
+        if(!isFetching) {
+          checkAndFetchDoorDashData();
+        }
+      }
+    } else {
+      // console.log("Fetching False checkDoorDashLoginStatus");
+      chrome.storage.local.set({ doordashFetching: false });
+      isFetching = false;
+    }
+    return isLoggedIn;
   }
 
   function getCookieValue(cookieString, name) {
